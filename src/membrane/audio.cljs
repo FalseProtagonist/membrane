@@ -3,9 +3,11 @@
 
 
 (defonce audio-context
-  (if (.-AudioContext js/window)
-    (js/window.AudioContext.)
-    (js/window.webkitAudioContext.)))
+  nil
+  ;; (if (.-AudioContext js/window)
+  ;;   (js/window.AudioContext.)
+  ;;   (js/window.webkitAudioContext.))
+  )
 
 
 (defn load-audio [url]

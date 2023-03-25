@@ -2643,3 +2643,20 @@
        )))
 
 
+(defrecord RotateAround [degrees x y drawable]
+    IOrigin
+    (-origin [this]
+        [0 0])
+
+    IMakeNode
+    (make-node [this childs]
+      (assert (= (count childs) 1))
+      (RotateAround. degrees x y (first childs)))
+
+  IChildren
+  (-children [this]
+      [drawable])
+
+  IBounds
+  (-bounds [this]
+      (child-bounds drawable)))
