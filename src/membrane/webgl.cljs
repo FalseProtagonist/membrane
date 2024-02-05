@@ -20,10 +20,12 @@
                      label
                      image]]
             [membrane.audio :as audio]
+            [membrane.env :refer [is-main?]]
             ["opentype.js" :as opentype]
             goog.object
             [membrane.component :refer [defui]]))
 
+;; (def is-main? (not= (.-type (js/require "process")) "renderer"))
 
 (def ^:dynamic *ctx*)
 (def ^:dynamic *paint-style* :membrane.ui/style-fill)
@@ -162,9 +164,10 @@
      (.appendChild (-> js/document .-body)
                    link))))
 
-(load-font "Ubuntu"
-           "https://fonts.googleapis.com/css?family=Ubuntu&display=swap"
-           "https://fonts.gstatic.com/s/ubuntu/v10/4iCs6KVjbNBYlgo6eA.ttf")
+(when-not is-main?
+  (load-font "Ubuntu"
+             "https://fonts.googleapis.com/css?family=Ubuntu&display=swap"
+             "https://fonts.gstatic.com/s/ubuntu/v10/4iCs6KVjbNBYlgo6eA.ttf"))
 
 
 (defn font-scale [freetype-font font-size]
@@ -233,7 +236,7 @@
             options (js-obj {:kerning true})
             freetype-font (get-font font)
             glyphs (.stringToGlyphs freetype-font line)
-            position  (aget freetype-font "position")
+            ^js position  (aget freetype-font "position")
             script (.getDefaultScriptName position)
             kerning-lookups (.getKerningTables position
                                                script
@@ -339,8 +342,8 @@
         text (str text "8")
         freetype-font (get-font font)
         glyphs (.stringToGlyphs freetype-font text)
-        position  (aget freetype-font "position")
-        script (.getDefaultScriptName position)
+        ^js position  (aget freetype-font "position")
+        ^js script (.getDefaultScriptName position)
         kerning-lookups (.getKerningTables position
                                            script
                                            nil)
@@ -576,36 +579,36 @@
       (.addEventListener canvas-elem event (partial handler canvas)))
     canvas))
 
-(let [content-scale (.-devicePixelRatio js/window)]
-  (defn redraw [canvas]
-    (binding [*ctx* (:ctx canvas)
-              *draw-cache* (:draw-cache canvas)]
-      (let [ui (:ui canvas)
-            canvas-elem (:canvas-elem canvas)
+(when-not is-main? 
+  (let [content-scale (.-devicePixelRatio js/window)]
+    (defn redraw [canvas]
+      (binding [*ctx* (:ctx canvas)
+                *draw-cache* (:draw-cache canvas)]
+        (let [ui (:ui canvas)
+              canvas-elem (:canvas-elem canvas)
 
-            container-info {:container-size [(.-clientWidth canvas-elem)
-                                             (.-clientHeight canvas-elem)]
-                            :container canvas}]
-        (.clearRect *ctx*
-                    0 0
-                    (.-width canvas-elem) (.-height canvas-elem))
-        (when (and
-               content-scale
-               (not= 1 content-scale)
-               (or (not= (.-width canvas-elem)
-                         (* content-scale (.-clientWidth canvas-elem)))
-                   (not= (.-height canvas-elem)
-                         (* content-scale (.-clientHeight canvas-elem)))))
-          (println "resizing canvas")
-          (update-scale canvas-elem))
+              container-info {:container-size [(.-clientWidth canvas-elem)
+                                               (.-clientHeight canvas-elem)]
+                              :container canvas}]
+          (.clearRect *ctx*
+                      0 0
+                      (.-width canvas-elem) (.-height canvas-elem))
+          (when (and
+                 content-scale
+                 (not= 1 content-scale)
+                 (or (not= (.-width canvas-elem)
+                           (* content-scale (.-clientWidth canvas-elem)))
+                     (not= (.-height canvas-elem)
+                           (* content-scale (.-clientHeight canvas-elem)))))
+            (println "resizing canvas")
+            (update-scale canvas-elem))
 
-        (reset! ui ((:view-fn canvas) container-info))
-        (push-state *ctx*
-                    (let [content-scale (.-devicePixelRatio js/window)]
-                      (when (and content-scale (not= 1 content-scale))
-                        (.scale *ctx* content-scale content-scale)))
-                    (draw @ui))
-        ))))
+          (reset! ui ((:view-fn canvas) container-info))
+          (push-state *ctx*
+                      (let [content-scale (.-devicePixelRatio js/window)]
+                        (when (and content-scale (not= 1 content-scale))
+                          (.scale *ctx* content-scale content-scale)))
+                      (draw @ui)))))))
 
 
 

@@ -2,7 +2,16 @@
   #?(:cljs (:require-macros [membrane.ui :refer [make-event-handler
                                                  cond-let]]))
   #?(:clj (:import javax.imageio.ImageIO))
+  ;; (:require [jot-shared.utility.log :refer [log-to-state log-r]])
   (:refer-clojure :exclude [drop]))
+
+(defn log-to-state [& args])
+
+(defn log-r [k v] v)
+
+(def log-counter (atom 0))
+
+(defn inc-log-counter [] (swap! log-counter inc))
 
 (defrecord Font [name size weight width slant])
 
@@ -46,7 +55,7 @@
   :extend-via-metadata true
   (-drop [elem paths pos]))
 (defprotocol IScroll
-  :extend-via-metadata true
+  :extend-viaIKeyEvent true
   (-scroll [elem delta mpos]))
 (defprotocol IMouseWheel
   :extend-via-metadata true
@@ -227,12 +236,22 @@
     intents)
 
   IMouseEvent
-  (-mouse-event [elem mpos button mouse-down? mods]
-    (when-let [local-pos (within-bounds? elem mpos)]
-      (let [intents
-            (some #(seq (-mouse-event % local-pos button mouse-down? mods))
-                  (reverse (children elem)))]
-        (-bubble elem intents))))
+  (-mouse-event
+   [elem mpos button mouse-down? mods]
+   (log-to-state :mouse-event1 [elem mpos button mouse-down? mods])
+   (let [c (inc-log-counter)]
+     (log-to-state :mouse-event [c elem])
+     (let [mouse-event-res
+           (when-let [local-pos (within-bounds? elem mpos)]
+             (let [intents
+                   (some #(seq (-mouse-event % local-pos button mouse-down? mods))
+                         (reverse (children elem)))]
+               (log-to-state :bubbling [c elem intents])
+               (let [res  (-bubble elem intents)]
+                 (log-to-state :bubbled [c elem intents])
+                 res)))]
+       (log-to-state :mouse-event-r [c elem])
+       mouse-event-res)))
 
   IMouseMove
   (-mouse-move [elem mpos]
@@ -260,13 +279,21 @@
 
   IKeyPress
   (-key-press [this info]
-    (let [intents (mapcat #(-key-press % info) (children this))]
-      (-bubble this intents)))
+    (log-to-state :-key-press [this info])
+    (log-r
+     :key-press-res
+     (let [c (children this)
+           _ (log-to-state :key-press-children {:this this :c c :info info})
+           intents (mapcat #(-key-press % info) c)]
+       (-bubble this intents))))
 
   IKeyEvent
   (-key-event [this key scancode action mods]
-    (let [intents (mapcat #(-key-event % key scancode action mods) (children this))]
-      (-bubble this intents))))
+    (log-to-state :-key-event [this key scancode action mods])
+    (log-r
+     :-key-event-r
+     (let [intents (mapcat #(-key-event % key scancode action mods) (children this))]
+       (-bubble this intents)))))
 
 
 (def SHIFT-MASK 0x0001)
@@ -1398,10 +1425,12 @@
         (when-let [local-pos (within-bounds? this pos)]
           (on-mouse-down local-pos)))
       (when-let [local-pos (within-bounds? this pos)]
-        (let [intents
-              (some #(seq (-mouse-event % local-pos button mouse-down? mods))
-                    (reverse (children this)))]
-          intents)))))
+        (log-to-state :on-mouse-down 1)
+        (log-r :on-mouse-down-r
+               (let [intents
+                     (some #(seq (-mouse-event % local-pos button mouse-down? mods))
+                           (reverse (children this)))]
+                 intents))))))
 
 (swap! default-draw-impls
        assoc OnMouseDown
@@ -1866,8 +1895,9 @@
 
   IKeyPress
   (-key-press [this key]
+    (log-to-state :on-click-kp [this key])
     (when on-key-press
-      (on-key-press key)))
+      (log-r :on-click-kp-r (on-key-press key))))
 
     IMakeNode
     (make-node [this childs]
@@ -1914,8 +1944,10 @@
 
   IKeyEvent
   (-key-event [this key scancode action mods]
-      (when on-key-event
-        (on-key-event key scancode action mods)))
+      (log-to-state :OnKeyEvent [this key scancode action mods])
+      (log-r :OnKeyEvent-r
+             (when on-key-event
+               (on-key-event key scancode action mods))))
 
     IMakeNode
     (make-node [this childs]
@@ -2509,10 +2541,13 @@
 
   IKeyEvent
   (-key-event [this key scancode action mods]
-    (if-let [on-key-event (:key-event handlers)]
-      (on-key-event key scancode action mods)
-      (let [intents (mapcat #(-key-event % key scancode action mods) (children this))]
-        (-bubble this intents))))
+    (log-to-state :OnEventK [this key scancode action mods])
+    (log-r
+     :OnEventK-r
+     (if-let [on-key-event (:key-event handlers)]
+       (on-key-event key scancode action mods)
+       (let [intents (mapcat #(-key-event % key scancode action mods) (children this))]
+         (-bubble this intents)))))
 
   IHasKeyPress
   (has-key-press [this]
@@ -2707,9 +2742,12 @@
                  :key-event
                  (on-key-event
                   (fn [key scancode action mods]
-                    (handler (fn [key scancode action mods]
-                               (key-event body key scancode action mods))
-                             key scancode action mods))
+                    (log-to-state :wrap-on-key-event [key scancode action mods])
+                    (log-r 
+                     :wrap-on-key-event-r
+                     (handler (fn [key scancode action mods]
+                                      (key-event body key scancode action mods))
+                                    key scancode action mods)))
                   body)
 
                  :key-press
@@ -3070,3 +3108,20 @@
        )))
 
 
+(defrecord RotateAround [degrees x y drawable]
+    IOrigin
+    (-origin [this]
+        [0 0])
+
+    IMakeNode
+    (make-node [this childs]
+      (assert (= (count childs) 1))
+      (RotateAround. degrees x y (first childs)))
+
+  IChildren
+  (-children [this]
+      [drawable])
+
+  IBounds
+  (-bounds [this]
+      (child-bounds drawable)))

@@ -5,6 +5,7 @@ pom.xml
 /classes/
 /out/
 /target/
+.calva/
 .lein-deps-sum
 .lein-repl-history
 .lein-plugins/

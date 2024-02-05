@@ -3,7 +3,8 @@
 
 
 (defonce audio-context
-  (if (.-AudioContext js/window)
+  nil
+  #_(if (.-AudioContext js/window)
     (js/window.AudioContext.)
     (js/window.webkitAudioContext.)))
 
