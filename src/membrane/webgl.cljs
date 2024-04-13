@@ -23,7 +23,9 @@
             [membrane.env :refer [is-main?]]
             ["opentype.js" :as opentype]
             goog.object
-            [membrane.component :refer [defui]]))
+            [membrane.component :refer [defui]]
+            
+            [jot-shared.introspection.profiling :refer [plog]]))
 
 ;; (def is-main? (not= (.-type (js/require "process")) "renderer"))
 
@@ -75,37 +77,38 @@
 
 (defn cached-draw [drawable]
   #_(draw drawable)
-  (let [padding (float 5)]
-    (if *already-drawing*
-      (draw drawable)
-      (let [[xscale yscale :as content-scale] [(.-devicePixelRatio js/window)
-                                               (.-devicePixelRatio js/window)]
-            [img img-width img-height]
-            (if-let [img-info (get @*draw-cache* [drawable content-scale *paint-style*])]
-              img-info
-              (do
-                (let [[w h] (bounds drawable)
-                      img-width (int (+ (* 2 padding) (max 0 w)))
-                      img-height (int (+ (* 2 padding) (max 0 h)))
-                      offscreen-canvas (create-canvas (* xscale img-width) (* yscale img-height))
+  (plog :cached-draw
+   (let [padding (float 5)]
+     (if *already-drawing*
+       (draw drawable)
+       (let [[xscale yscale :as content-scale] [(.-devicePixelRatio js/window)
+                                                (.-devicePixelRatio js/window)]
+             [img img-width img-height]
+             (if-let [img-info (get @*draw-cache* [drawable content-scale *paint-style*])]
+               img-info
+               (do
+                 (let [[w h] (bounds drawable)
+                       img-width (int (+ (* 2 padding) (max 0 w)))
+                       img-height (int (+ (* 2 padding) (max 0 h)))
+                       offscreen-canvas (create-canvas (* xscale img-width) (* yscale img-height))
 
-                      offscreen-context (.getContext offscreen-canvas "2d")
-                      _ (copy-canvas-properties! *ctx* offscreen-context)
+                       offscreen-context (.getContext offscreen-canvas "2d")
+                       _ (copy-canvas-properties! *ctx* offscreen-context)
 
-                      _ (binding [*ctx* offscreen-context
-                                  *already-drawing* true]
-                          (when (and (not= xscale 1)
-                                     (not= yscale 1))
-                            (.scale *ctx* xscale yscale))
+                       _ (binding [*ctx* offscreen-context
+                                   *already-drawing* true]
+                           (when (and (not= xscale 1)
+                                      (not= yscale 1))
+                             (.scale *ctx* xscale yscale))
 
-                          (.translate *ctx* padding padding)
-                          (draw drawable))
-                      img offscreen-canvas
-                      img-info [img img-width img-height]]
-                  (swap! *draw-cache* assoc [drawable content-scale *paint-style*] img-info)
-                  img-info)))]
-        (push-state *ctx*
-                    (.drawImage *ctx* img (- padding) (- padding) img-width img-height))))))
+                           (.translate *ctx* padding padding)
+                           (draw drawable))
+                       img offscreen-canvas
+                       img-info [img img-width img-height]]
+                   (swap! *draw-cache* assoc [drawable content-scale *paint-style*] img-info)
+                   img-info)))]
+         (push-state *ctx*
+                     (.drawImage *ctx* img (- padding) (- padding) img-width img-height)))))))
 
 (defrecord Cached [drawable]
     IOrigin
@@ -142,6 +145,8 @@
   ([font-name stylesheet-url ttf-url]
    (load-font font-name stylesheet-url ttf-url nil))
   ([font-name stylesheet-url ttf-url callback]
+   (load-font font-name stylesheet-url ttf-url callback true))
+  ([font-name stylesheet-url ttf-url callback is-url?]
    (.load opentype
           ttf-url
           (fn [err font]
@@ -155,7 +160,8 @@
                   (cb))
                 (reset! freetype-callbacks [])
                 (when callback
-                  (callback))))))
+                  (callback)))))
+          #js {"isUrl" is-url?})
 
    (let [link (.createElement js/document "link")]
      (doto link

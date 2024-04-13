@@ -2,12 +2,14 @@
   #?(:cljs (:require-macros [membrane.ui :refer [make-event-handler
                                                  cond-let]]))
   #?(:clj (:import javax.imageio.ImageIO))
-  ;; (:require [jot-shared.utility.log :refer [log-to-state log-r]])
+  (:require 
+   [almada-shared.memoize :refer [memoize-]]
+   [jot-shared.utility.log :refer [log-to-state log-r]])
   (:refer-clojure :exclude [drop]))
 
-(defn log-to-state [& args])
+;; (defn log-to-state [& args])
 
-(defn log-r [k v] v)
+;; (defn log-r [k v] v)
 
 (def log-counter (atom 0))
 
@@ -330,12 +332,6 @@
   :extend-via-metadata true
   (-bounds [elem]
     "Returns a 2 element vector with the [width, height] of an element's bounds with respect to its origin"))
-
-(def
-  ^{:arglists '([elem])
-    :doc
-    "Returns a 2 element vector with the [width, height] of an element's bounds with respect to its origin"}
-  bounds (memoize #(-bounds %)))
 
 (defn child-bounds [elem]
   (let [[ox oy] (origin elem)
@@ -3125,3 +3121,50 @@
   IBounds
   (-bounds [this]
       (child-bounds drawable)))
+
+(defn dirty-instance [type-name val]
+     #?(:cljs
+        (try (= (first ((goog.object/get (type val)
+                                         "cljs$lang$ctorPrSeq")))
+                type-name)
+             (catch js/Error e false))
+        :clj (throw (Error.))))
+
+(def
+  ^{:arglists '([elem])
+    :doc
+    "Returns a 2 element vector with the [width, height] of an element's bounds with respect to its origin"}
+  bounds 
+  (memoize-
+   ;;  memoize
+   (fn [args]
+     (not
+      (or (instance? FixedBounds (first args))
+          (and
+           (instance? Translate (first args))
+           (instance? FixedBounds (first (children (first args)))))
+          (dirty-instance "jot-shared.ui.fixed-origin/FixedOrigin"
+                          (first args))
+          (and
+           (vector? (first args))
+           (dirty-instance "jot-shared.ui.shadow/Shadow"
+                           (first (children (first args))))
+           (dirty-instance "jot-shared.ui.fixed-origin/FixedOrigin"
+                           (second (children (first args)))))
+          (and
+           (vector? (first args))
+           (= (count (children (first args))) 5)
+           (vector?
+            (first (children (first args))))
+           (instance? Translate (second (children (first args))))
+           (instance? Translate (nth (children (first args)) 2))
+           (instance? Translate (nth (children (first args)) 3))
+           (instance? Translate (nth (children (first args)) 4))))))
+   (fn [el]
+     (log-to-state :mbounds el {:profiling? true})
+     (-bounds el)))
+  #_(fn [el] 
+    (log-to-state :mbounds el {:profiling? true})
+    (-bounds el))
+  )
+
