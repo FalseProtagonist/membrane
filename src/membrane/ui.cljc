@@ -560,19 +560,23 @@
    (TextSelection. (str text) selection font)))
 
 
-(defrecord TextCursor [text cursor font]
+(defrecord TextCursor [text cursor font color]
     IOrigin
     (-origin [_]
         [0 0]))
+
+(def tc-default-color [0.9 0.9 0.9])
 
 (defn text-cursor
   "Graphical elem that can draw a text cursor
 
    font should be a membrane.ui.Font"
   ([text cursor]
-   (TextCursor. (str text) cursor default-font))
+   (TextCursor. (str text) cursor default-font tc-default-color))
   ([text cursor font]
-   (TextCursor. (str text) cursor font)))
+   (TextCursor. (str text) cursor font tc-default-color))
+  ([text cursor font color]
+   (TextCursor. (str text) cursor font color)))
 
 
 
@@ -3017,6 +3021,7 @@
 (def index-for-position* (atom nil))
 
 (defn index-for-position [font text x y]
+  (log-to-state :ifp [font text x y])
   (let [f @index-for-position*]
     (assert f "index-for-position should be replaced by implementation")
     (f font text x y)))

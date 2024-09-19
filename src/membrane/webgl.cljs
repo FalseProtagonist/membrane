@@ -24,8 +24,10 @@
             ["opentype.js" :as opentype]
             goog.object
             [membrane.component :refer [defui]]
-            
-            [jot-shared.introspection.profiling :refer [plog]]))
+
+            [jot-shared.introspection.profiling :refer [plog]]
+            [jot-shared.introspection.tracing :refer [tlet]]
+            [jot-shared.utility.log :refer [log-to-state log-r]]))
 
 ;; (def is-main? (not= (.-type (js/require "process")) "renderer"))
 
@@ -216,7 +218,7 @@
   (let [lines (clojure.string/split text #"\n" -1)
         bounds (map #(line-bounds font %) lines)
         maxx (reduce max 0 (map first bounds))
-        maxy (* (dec (font-line-height font))
+        maxy (* #_(dec) (font-line-height font)
                 (count lines))]
     [maxx maxy]))
 
@@ -232,45 +234,47 @@
 
 
 (defn index-for-position [font text px py]
+  (log-to-state :ifp-2 [font text px py])
   (let [lines (clojure.string/split text #"\n" -1)
         line-height (font-line-height font)
         line-index (int (/ py line-height))]
-    (if (>= line-index (count lines))
-      (count text)
-      (let [line (nth lines line-index)
-            font-size (get font :size (:size ui/default-font))
-            options (js-obj {:kerning true})
-            freetype-font (get-font font)
-            glyphs (.stringToGlyphs freetype-font line)
-            ^js position  (aget freetype-font "position")
-            script (.getDefaultScriptName position)
-            kerning-lookups (.getKerningTables position
-                                               script
-                                               nil)
-            fscale (font-scale freetype-font font-size)
-            column-index (loop [idx 0
-                                x 0
-                                y 0]
-                           (if (< px x)
-                             (dec idx)
-                             (if (< idx (alength glyphs))
-                               (let [glyph (aget glyphs idx)
-                                     x (if (aget glyph "advanceWidth")
-                                         (+ x (* fscale (aget glyph "advanceWidth")))
-                                         x)
-                                     x (if (< idx (dec (alength glyphs)))
-                                         (let [next-glyph (aget glyphs (inc idx))
-                                               kerning-value (if kerning-lookups
-                                                               (.getKerningValue position (aget glyph "index") (aget next-glyph "index"))
-                                                               (.getKerningValue freetype-font glyph next-glyph))]
-                                           (+ x (* kerning-value fscale)))
-                                         x)]
-                                 (recur (inc idx)
-                                        x
-                                        y))
-                               idx)))]
-        (apply + column-index (map #(inc (count %)) (take line-index lines)))))
-    ))
+    (log-to-state :line-index line-index)
+    (log-r :ifp-r
+           (if (>= line-index (count lines))
+             (count text)
+             (let [line (nth lines line-index)
+                   font-size (get font :size (:size ui/default-font))
+                   options (js-obj {:kerning true})
+                   freetype-font (get-font font)
+                   glyphs (.stringToGlyphs freetype-font line)
+                   ^js position  (aget freetype-font "position")
+                   script (.getDefaultScriptName position)
+                   kerning-lookups (.getKerningTables position
+                                                      script
+                                                      nil)
+                   fscale (font-scale freetype-font font-size)
+                   column-index (loop [idx 0
+                                       x 0
+                                       y 0]
+                                  (if (< px x)
+                                    (dec idx)
+                                    (if (< idx (alength glyphs))
+                                      (let [glyph (aget glyphs idx)
+                                            x (if (aget glyph "advanceWidth")
+                                                (+ x (* fscale (aget glyph "advanceWidth")))
+                                                x)
+                                            x (if (< idx (dec (alength glyphs)))
+                                                (let [next-glyph (aget glyphs (inc idx))
+                                                      kerning-value (if kerning-lookups
+                                                                      (.getKerningValue position (aget glyph "index") (aget next-glyph "index"))
+                                                                      (.getKerningValue freetype-font glyph next-glyph))]
+                                                  (+ x (* kerning-value fscale)))
+                                                x)]
+                                        (recur (inc idx)
+                                               x
+                                               y))
+                                      idx)))]
+               (apply + column-index (map #(inc (count %)) (take line-index lines))))))))
 (set! membrane.ui/index-for-position index-for-position)
 
 (extend-type membrane.ui.Label
@@ -281,33 +285,36 @@
                   (:text this))))
   IDraw
   (draw [this]
-    (let [lines (clojure.string/split (:text this) #"\n" -1)
-          font (:font this)
-          line-height (font-line-height font)]
-     (push-state *ctx*
-                 (when font
-                   (set! (.-font *ctx*)
-                         (str (when (:weight font)
-                                (str (:weight font) " "))
-                              (or (:size font)
-                                  (:size ui/default-font))
-                              "px "
-                              "'"
-                              (or (:name font)
-                                  "Ubuntu")
-                              "'")))
+        (let [lines (clojure.string/split (:text this) #"\n" -1)
+              font (:font this)
+              line-height (font-line-height font)]
+          (log-to-state :ldraw [font line-height])
+          (push-state *ctx*
+                      (when font
+                        (set! (.-font *ctx*)
+                              (str (when (:weight font)
+                                     (str (:weight font) " "))
+                                   (or (:size font)
+                                       (:size ui/default-font))
+                                   "px "
+                                   "'"
+                                   (or (:name font)
+                                       "Ubuntu")
+                                   "'")))
 
-                 (doseq [line lines]
-                   (.translate *ctx* 0 (dec line-height))
-                   (case *paint-style*
+                      (->>
+                       lines
+                       (map-indexed #_[line lines]
+                        (fn [i line]
+                          (.translate *ctx* 0 line-height #_(dec line-height))
+                          (case *paint-style*
 
-                     :membrane.ui/style-fill (.fillText *ctx* line 0 0)
-                     :membrane.ui/style-stroke (.strokeText *ctx* line 0 0)
-                     :membrane.ui/style-stroke-and-fill (do
-                                                          (.fillText *ctx* line 0 0)
-                                                          (.strokeText *ctx* line 0 0)))
-                   )))
-    ))
+                            :membrane.ui/style-fill (.fillText *ctx* line 0 0)
+                            :membrane.ui/style-stroke (.strokeText *ctx* line 0 0)
+                            :membrane.ui/style-stroke-and-fill (do
+                                                                 (.fillText *ctx* line 0 0)
+                                                                 (.strokeText *ctx* line 0 0)))))
+                       doall)))))
 
 (defonce images (atom {}))
 
@@ -326,14 +333,32 @@
   IDraw
   (draw [this]
     (when-let [image-info (get @images (:image-path this))]
-      (let [[width height] (:size this)]
-        (push-state *ctx*
-                    (when-let [opacity (:opacity this)]
-                      (set! (.-globalAlpha *ctx*) opacity))
-                    (.drawImage *ctx*
-                                (:image-obj image-info)
-                                0 0
-                                width height))))))
+      (log-to-state :imd image-info)
+      (let [[width height] (:size this)
+            ^js image-obj (:image-obj image-info)]
+        (log-to-state :imd1 [width height])
+
+        ;; (push-state *ctx*)
+        (when-let [opacity (:opacity this)]
+          (set! (.-globalAlpha *ctx*) opacity))
+        (log-to-state :imd2 [image-info
+                             width
+                             height
+                             (.-currentSrc image-obj)
+                             (.-complete image-obj)
+                             (.-loading image-obj)
+                             (.-height image-obj)
+                             (.-width image-obj)
+                             *ctx*])
+        ;; (if (.-loaded image-obj))
+        (.drawImage *ctx*
+                    (:image-obj image-info)
+                    0 0
+                    width height)
+        ;; (.on image-obj "")
+        (log-to-state :imd3 1)
+        nil))))
+
 (extend-type membrane.ui.Translate
   IDraw
   (draw [this]
@@ -379,7 +404,7 @@
                                                    x))
                         :else x)
                 new-y (if (= c "\n")
-                        (+ y (dec line-height))
+                        (+ y #_(dec) line-height)
                         y)]
             (if (<= selection-start 0)
               (do
@@ -418,7 +443,8 @@
   (draw [this]
     (let [cursor (min (count (:text this)) (:cursor this))]
       (render-selection (:font this) (str (:text this) "8") cursor (inc cursor)
-                        [0.9 0.9 0.9]))
+                        (:color this)
+                        #_[0.9 0.9 0.9]))
     ))
 
 
@@ -781,10 +807,12 @@
    })
 
 (defn -on-key-down [canvas e]
-  (let [raw-key (.-key e)
-        key (if (> (.-length raw-key) 1)
-                (get keymap raw-key :undefined)
-                raw-key)]
+  (tlet [raw-key (.-key e)
+         key (if (> (.-length raw-key) 1)
+               (do
+                 (log-to-state :rk raw-key)
+                 (get keymap raw-key :undefined))
+               raw-key)]
     (membrane.ui/key-event @(:ui canvas) key nil nil nil)
     (membrane.ui/key-press @(:ui canvas) key))
 
